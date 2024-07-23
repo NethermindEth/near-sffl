@@ -14,7 +14,6 @@ import (
 	"github.com/Layr-Labs/eigensdk-go/logging"
 	"github.com/Layr-Labs/eigensdk-go/metrics"
 	"github.com/Layr-Labs/eigensdk-go/services/avsregistry"
-	blsagg "github.com/Layr-Labs/eigensdk-go/services/bls_aggregation"
 	opinfoserv "github.com/Layr-Labs/eigensdk-go/services/operatorsinfo"
 	"github.com/Layr-Labs/eigensdk-go/signerv2"
 	eigentypes "github.com/Layr-Labs/eigensdk-go/types"
@@ -120,18 +119,22 @@ type Aggregator struct {
 	metrics            metrics.Metrics
 	aggregatorListener AggregatorEventListener
 
-	taskBlsAggregationService              blsagg.BlsAggregationService
+	taskBlsAggregationService              TaskBlsAggregationService
 	stateRootUpdateBlsAggregationService   MessageBlsAggregationService
 	operatorSetUpdateBlsAggregationService MessageBlsAggregationService
-	tasks                                  map[coretypes.TaskIndex]taskmanager.CheckpointTask
-	tasksLock                              sync.RWMutex
-	taskResponses                          map[coretypes.TaskIndex]map[eigentypes.TaskResponseDigest]messages.CheckpointTaskResponse
-	taskResponsesLock                      sync.RWMutex
-	msgDb                                  database.Databaser
-	stateRootUpdates                       map[coretypes.MessageDigest]messages.StateRootUpdateMessage
-	stateRootUpdatesLock                   sync.RWMutex
-	operatorSetUpdates                     map[coretypes.MessageDigest]messages.OperatorSetUpdateMessage
-	operatorSetUpdatesLock                 sync.RWMutex
+
+	msgDb database.Databaser
+
+	tasks             map[coretypes.TaskIndex]taskmanager.CheckpointTask
+	tasksLock         sync.RWMutex
+	taskResponses     map[coretypes.TaskIndex]map[eigentypes.TaskResponseDigest]messages.CheckpointTaskResponse
+	taskResponsesLock sync.RWMutex
+
+	stateRootUpdates     map[coretypes.MessageDigest]messages.StateRootUpdateMessage
+	stateRootUpdatesLock sync.RWMutex
+
+	operatorSetUpdates     map[coretypes.MessageDigest]messages.OperatorSetUpdateMessage
+	operatorSetUpdatesLock sync.RWMutex
 }
 
 var _ core.Metricable = (*Aggregator)(nil)
@@ -217,7 +220,7 @@ func NewAggregator(
 
 	operatorPubkeysService := opinfoserv.NewOperatorsInfoServiceInMemory(ctx, avsRegistryChainSubscriber, avsReader, logger)
 	avsRegistryService := avsregistry.NewAvsRegistryServiceChainCaller(avsReader, operatorPubkeysService, logger)
-	taskBlsAggregationService := blsagg.NewBlsAggregatorService(avsRegistryService, logger)
+	taskBlsAggregationService := NewTaskBlsAggregatorService(avsRegistryService, logger)
 	stateRootUpdateBlsAggregationService := NewMessageBlsAggregatorService(avsRegistryService, ethHttpClient, logger)
 	operatorSetUpdateBlsAggregationService := NewMessageBlsAggregatorService(avsRegistryService, ethHttpClient, logger)
 
@@ -320,7 +323,7 @@ func (agg *Aggregator) Close() error {
 	return nil
 }
 
-func (agg *Aggregator) sendAggregatedResponseToContract(blsAggServiceResp blsagg.BlsAggregationServiceResponse) {
+func (agg *Aggregator) sendAggregatedResponseToContract(blsAggServiceResp types.TaskBlsAggregationServiceResponse) {
 	if blsAggServiceResp.Err != nil {
 		agg.aggregatorListener.IncErroredSubmissions()
 		if strings.Contains(blsAggServiceResp.Err.Error(), "expired") {
@@ -343,7 +346,7 @@ func (agg *Aggregator) sendAggregatedResponseToContract(blsAggServiceResp blsagg
 	taskResponse := agg.taskResponses[blsAggServiceResp.TaskIndex][blsAggServiceResp.TaskResponseDigest]
 	agg.taskResponsesLock.RUnlock()
 
-	aggregation, err := messages.NewMessageBlsAggregationFromServiceResponse(uint64(task.TaskCreatedBlock), blsAggServiceResp)
+	aggregation, err := types.NewMessageBlsAggregationFromServiceResponse(uint64(task.TaskCreatedBlock), blsAggServiceResp)
 	if err != nil {
 		agg.logger.Error("Aggregator failed to format aggregation", "err", err)
 		return
@@ -411,7 +414,7 @@ func (agg *Aggregator) sendNewCheckpointTask() {
 	agg.tasksLock.Unlock()
 
 	quorumThresholds := make([]eigentypes.QuorumThresholdPercentage, len(newTask.QuorumNumbers))
-	for i, _ := range newTask.QuorumNumbers {
+	for i := range newTask.QuorumNumbers {
 		quorumThresholds[i] = types.TASK_AGGREGATION_QUORUM_THRESHOLD
 	}
 	// TODO(samlaf): we use seconds for now, but we should ideally pass a blocknumber to the blsAggregationService
