@@ -1,0 +1,22 @@
+{
+  "private": true,
+  "name": "demo-nffl-cli",
+  "version": "0.0.1",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Near.org",
+  "license": "MIT",
+  "description": "",
+  "dependencies": {
+    "bignumber.js": "^9.1.2",
+    "commander": "^12.1.0",
+    "ethers": "^6.13.1",
+    "rlp": "^3.0.0"
+  },
+  "bin": {
+    "demo-nffl-cli": "./index.js"
+  }
+}
